@@ -1,0 +1,220 @@
+rules_version = '2';
+
+// ════════════════════════════════════════════════════════════════════════════
+// SevaSetu — Firestore Security Rules
+//
+// ROOT CAUSE OF "Missing or insufficient permissions" on admin pages:
+//
+// The old isAdmin() used get() to read /users/{uid} inside the rule itself.
+// Firestore evaluates rules per-document during a collection query.  On each
+// document the nested get() fires a NEW internal read that must also pass
+// rules — but /users/{uid} has "allow read: if isSignedIn()" which itself
+// calls isAdmin() again → infinite recursion / permission denied.
+//
+// FIX: isAdmin() now reads role from the JWT custom claim ONLY.
+//   request.auth.token.role == "admin"
+// No nested Firestore reads.  No recursion.  No cold-start failures.
+//
+// HOW TO SET THE CUSTOM CLAIM (one-time setup, run from your own machine):
+//   node -e "
+//     const admin = require('firebase-admin');
+//     admin.initializeApp({ credential: admin.credential.applicationDefault() });
+//     admin.auth().setCustomUserClaims('<YOUR_ADMIN_UID>', { role: 'admin' })
+//       .then(() => { console.log('Done'); process.exit(0); });
+//   "
+// After running this, the admin must sign out and sign back in so the new
+// JWT (with role: "admin" claim) is issued.
+//
+// ALTERNATIVELY use the Firebase Console → Authentication → Users →
+// click the user → "Custom claims" → paste  {"role":"admin"}
+// ════════════════════════════════════════════════════════════════════════════
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+    function signedIn()      { return request.auth != null; }
+    function owner(uid)      { return signedIn() && request.auth.uid == uid; }
+    function isAdmin()       { return signedIn() && request.auth.token.role == "admin"; }
+
+    // ── settings ─────────────────────────────────────────────────────────────
+    match /settings/{docId} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+    // ── reviews ──────────────────────────────────────────────────────────────
+    match /reviews/{reviewId} {
+      allow read:                if true;
+      allow create, update, delete: if signedIn() && request.auth.uid == request.resource.data.userId;
+    }
+
+    // ── users ────────────────────────────────────────────────────────────────
+    // Admin dashboard queries: getDocs(collection("users"), where("role","==","donor"))
+    // Requires both list AND get for admin; any signed-in user can read their own doc.
+    match /users/{uid} {
+      allow get:    if signedIn();
+      allow list:   if isAdmin();
+      allow create: if owner(uid);
+      allow update: if owner(uid) || isAdmin();
+      allow delete: if owner(uid) || isAdmin();
+    }
+
+    // ── organizations ────────────────────────────────────────────────────────
+    // Admin: getPendingOrganizations() → list where status=="pending"
+    // Donors: browse active orgs → list where status=="active"
+    match /organizations/{orgId} {
+      allow get:    if true;
+      allow list:   if true;
+      allow create: if owner(orgId);
+      allow update: if owner(orgId) || isAdmin();
+      allow delete: if owner(orgId) || isAdmin();
+    }
+
+    // ── invites ──────────────────────────────────────────────────────────────
+    // getAllInvites(), createInviteToken(), revokeInviteToken()
+    match /invites/{token} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+    // ── requirements ─────────────────────────────────────────────────────────
+    match /requirements/{reqId} {
+      allow read:   if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if signedIn() && resource.data.organizationId == request.auth.uid;
+    }
+
+    // ── slots ────────────────────────────────────────────────────────────────
+    match /slots/{slotId} {
+      allow read:   if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if signedIn() && resource.data.organizationId == request.auth.uid;
+    }
+
+    // ── donations ────────────────────────────────────────────────────────────
+    // deleteDonorAccount / deleteOrganizationAccount runs collection queries → list needed
+    match /donations/{donationId} {
+      allow list:   if isAdmin();
+      allow get:    if signedIn() && (
+                      resource.data.donorId        == request.auth.uid ||
+                      resource.data.organizationId == request.auth.uid ||
+                      isAdmin()
+                    );
+      allow create: if signedIn();
+      allow update: if signedIn() && (
+                      resource.data.donorId        == request.auth.uid ||
+                      resource.data.organizationId == request.auth.uid ||
+                      isAdmin()
+                    );
+      allow delete: if signedIn() && (
+                      resource.data.donorId        == request.auth.uid ||
+                      resource.data.organizationId == request.auth.uid ||
+                      isAdmin()
+                    );
+    }
+
+    // ── donorItems ───────────────────────────────────────────────────────────
+    match /donorItems/{itemId} {
+      allow read:   if signedIn() && (
+                      resource.data.donorId        == request.auth.uid ||
+                      resource.data.organizationId == request.auth.uid
+                    );
+      allow create: if signedIn() && request.resource.data.donorId == request.auth.uid;
+      allow update: if signedIn() && (
+                      resource.data.donorId        == request.auth.uid ||
+                      resource.data.organizationId == request.auth.uid
+                    );
+      allow delete: if signedIn() && resource.data.donorId == request.auth.uid;
+    }
+
+    // ── sponsorshipRequests ──────────────────────────────────────────────────
+    // deleteOrganizationAccount queries this collection → list needed for admin
+    match /sponsorshipRequests/{reqId} {
+      allow list:   if isAdmin();
+      allow get:    if signedIn() && (
+                      resource.data.donorId        == request.auth.uid ||
+                      resource.data.organizationId == request.auth.uid
+                    );
+      allow create: if signedIn();
+      allow update: if signedIn() && (
+                      resource.data.donorId        == request.auth.uid ||
+                      resource.data.organizationId == request.auth.uid
+                    );
+      allow delete: if signedIn() && (
+                      resource.data.donorId        == request.auth.uid ||
+                      resource.data.organizationId == request.auth.uid ||
+                      isAdmin()
+                    );
+    }
+
+    // ── notifications ────────────────────────────────────────────────────────
+    // deleteDonorAccount / deleteOrganizationAccount queries notifications → list needed
+    match /notifications/{notifId} {
+      allow list:   if isAdmin();
+      allow get:    if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn();
+      allow update: if signedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // ── vendors ──────────────────────────────────────────────────────────────
+    // getAllVendorsForAdmin()  → getDocs(collection("vendors"))         → list
+    // getPendingVendors()     → getDocs(query(where("approvalStatus"))) → list
+    match /vendors/{vendorId} {
+      allow get:    if true;
+      allow list:   if true;
+      allow create: if owner(vendorId);
+      allow update: if owner(vendorId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── vendorDocuments ──────────────────────────────────────────────────────
+    // getVendorDocuments(vendorId) → query where vendorId == ... → list
+    match /vendorDocuments/{docId} {
+      allow list:   if signedIn();
+      allow get:    if signedIn();
+      allow create: if signedIn() && request.resource.data.vendorId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if signedIn() && resource.data.vendorId == request.auth.uid;
+    }
+
+    // ── vendorItems ──────────────────────────────────────────────────────────
+    match /vendorItems/{itemId} {
+      allow read:   if true;
+      allow create: if signedIn() && request.resource.data.vendorId == request.auth.uid;
+      allow update: if signedIn() && resource.data.vendorId == request.auth.uid;
+      allow delete: if signedIn() && resource.data.vendorId == request.auth.uid;
+    }
+
+    // ── orders ───────────────────────────────────────────────────────────────
+    match /orders/{orderId} {
+      allow read:   if signedIn() && (
+                      resource.data.vendorId       == request.auth.uid ||
+                      resource.data.organizationId == request.auth.uid ||
+                      resource.data.donorId        == request.auth.uid ||
+                      isAdmin()
+                    );
+      allow create: if signedIn();
+      allow update: if signedIn() && (
+                      resource.data.vendorId       == request.auth.uid ||
+                      resource.data.organizationId == request.auth.uid ||
+                      isAdmin()
+                    );
+      allow delete: if isAdmin();
+    }
+
+    // ── payments ─────────────────────────────────────────────────────────────
+    match /payments/{paymentId} {
+      allow read:  if signedIn() && (resource.data.donorId == request.auth.uid || isAdmin());
+      allow write: if false;
+    }
+
+    // ── catch-all ─────────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,23 @@
+// ADD THIS BLOCK to your existing firestore.rules, inside the
+// `match /databases/{database}/documents { ... }` block, alongside your
+// other collection rules (e.g. right after the `donations` block).
+//
+// Without this, your deny-all fallback rule blocks every read/write to
+// the new `donorItems` collection, and addDonorItem()/getDonorItems()
+// calls will fail with a permissions error even though the code is correct.
+
+match /donorItems/{itemId} {
+  // Donor who created it, or the org it was sent to, can read it
+  allow read:   if isSignedIn() && (
+    resource.data.donorId == request.auth.uid ||
+    resource.data.organizationId == request.auth.uid
+  );
+  // Donor creates the item addressed to themselves
+  allow create: if isSignedIn() && request.resource.data.donorId == request.auth.uid;
+  // Donor can edit their own pending item; org can update status (approve/reject)
+  allow update: if isSignedIn() && (
+    resource.data.donorId == request.auth.uid ||
+    resource.data.organizationId == request.auth.uid
+  );
+  allow delete: if isSignedIn() && resource.data.donorId == request.auth.uid;
+}
