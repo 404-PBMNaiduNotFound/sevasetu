@@ -24,11 +24,31 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import { CompleteProfilePopup } from "@/components/donor/complete-profile-popup"
 
-function getContribution(d: DonationDoc) {
+/** Returns true if the donation is slot/meal-based */
+function isMealDonation(d: DonationDoc): boolean {
+  return (
+    Boolean(d.slotId) ||
+    d.itemName === "meals" ||
+    (!d.itemName && !d.quantity && d.meals != null)
+  )
+}
+
+function getContribution(d: DonationDoc): string | null {
+  if (isMealDonation(d)) {
+    const count = d.meals ?? 0
+    return count > 0 ? `${count} meals` : null  // null = caller hides this row
+  }
   if (d.itemName) return `${d.itemName} — ${d.quantity ?? 0} ${d.unit ?? ""}`
-  if (d.quantity)  return `${d.quantity} ${d.unit ?? ""}`.trim()
-  if (d.meals)     return `${d.meals} meals`
-  return "Meal Sponsorship"
+  if (d.quantity) return `${d.quantity} ${d.unit ?? ""}`.trim()
+  return "Sponsorship"
+}
+
+/** Only show donations that have a real visible contribution */
+function hasRealContribution(d: DonationDoc): boolean {
+  if (isMealDonation(d)) return (d.meals ?? 0) > 0
+  if (d.itemName && d.itemName !== "meals") return true
+  if (d.quantity && d.quantity > 0)         return true
+  return false
 }
 
 function getDisplayDate(d: DonationDoc): string {
@@ -146,21 +166,27 @@ export default function DashboardPage() {
     }, 0)
   }, [completedDonations, orderByDonationId])
 
-  // Unique orgs that have completed donations
+  // Filtered completed donations by org tab
+  // Only show donations that have a real contribution (meals > 0, or have quantity/itemName)
+  const displayDonations = useMemo(
+    () => completedDonations.filter(hasRealContribution),
+    [completedDonations]
+  )
+
+  // Unique orgs that have completed donations (using displayDonations so tabs match visible list)
   const completedOrgs = useMemo(() => {
-    const orgIds = [...new Set(completedDonations.map((d: DonationDoc) => d.organizationId))] as string[]
+    const orgIds = [...new Set(displayDonations.map((d: DonationDoc) => d.organizationId))] as string[]
     return orgIds.map((id: string) => {
       const org = orgMap.get(id)
       const name = org?.organizationName || org?.name || id.slice(0, 10) + "…"
-      return { id, name, count: completedDonations.filter((d: DonationDoc) => d.organizationId === id).length }
+      return { id, name, count: displayDonations.filter((d: DonationDoc) => d.organizationId === id).length }
     })
-  }, [completedDonations, orgMap])
+  }, [displayDonations, orgMap])
 
-  // Filtered completed donations by org tab
   const filteredDonations = useMemo(() => {
-    if (orgFilter === "All") return completedDonations
-    return completedDonations.filter((d: DonationDoc) => d.organizationId === orgFilter)
-  }, [completedDonations, orgFilter])
+    if (orgFilter === "All") return displayDonations
+    return displayDonations.filter((d: DonationDoc) => d.organizationId === orgFilter)
+  }, [displayDonations, orgFilter])
 
   // Recommendations: tiered by priority, 2-day slot window, and location
   const recommended = useMemo((): RecommendedItem[] => {
@@ -363,7 +389,7 @@ export default function DashboardPage() {
                   onClick={() => setOrgFilter("All")}
                   className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${orgFilter === "All" ? "bg-primary text-primary-foreground" : "border border-border bg-background text-muted-foreground hover:border-primary/40"}`}
                 >
-                  All <span className="ml-1 text-xs">{completedDonations.length}</span>
+                  All <span className="ml-1 text-xs">{displayDonations.length}</span>
                 </button>
                 {completedOrgs.map((org: { id: string; name: string; count: number }) => (
                   <button
@@ -395,7 +421,7 @@ export default function DashboardPage() {
                         <HandHeart className="h-4 w-4" />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-foreground">{d.itemName ? `${d.itemName} Donation` : d.occasion || "Sponsorship"}</p>
+                        <p className="font-semibold text-foreground">{isMealDonation(d) ? (d.mealType ? `${d.mealType} Sponsorship` : "Meal Sponsorship") : d.itemName ? `${d.itemName} Donation` : d.occasion || "Sponsorship"}</p>
                         <p className="text-xs text-muted-foreground">
                           {getDisplayDate(d) !== "—" && <span>{getDisplayDate(d)} · </span>}
                           <span className="font-medium text-foreground">{getContribution(d)}</span>

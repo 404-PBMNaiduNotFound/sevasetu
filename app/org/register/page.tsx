@@ -125,9 +125,9 @@ function InvalidInviteScreen({ email, phone }: { email: string; phone: string })
         </div>
         <h1 className="text-xl font-bold text-gray-900">Invalid or expired invite</h1>
         <p className="max-w-sm text-sm text-gray-500">
-          Organization creation is not possible by your own , only after approvel of the admin you can register your Organization.<br></br>
-          if you already contacted admin then,
-          This registration link is invalid, has already been used, or was revoked by the admin.
+          Organization creation is not possible on your own — only after approval from the admin
+          can you register your organization. If you already contacted the admin, this registration
+          link is invalid, has already been used, or was revoked.
         </p>
         <p className="text-sm text-gray-500">To get a new invite, contact the admin:</p>
         <ContactBlock email={email} phone={phone} />
@@ -165,9 +165,9 @@ function OrgRegisterForm({ invite }: { invite: InviteDoc }) {
 
   const handleSubmit = async () => {
     setError(null)
-    if (!name.trim())        return setError("Organization name is required.")
-    if (password.length < 6) return setError("Password must be at least 6 characters.")
-    if (password !== confirm) return setError("Passwords do not match.")
+    if (!name.trim())         return setError("Organization name is required.")
+    if (password.length < 6)  return setError("Password must be at least 6 characters.")
+    if (password !== confirm)  return setError("Passwords do not match.")
     setLoading(true)
     try {
       const stillValid = await validateInviteToken(invite.token)
@@ -182,10 +182,14 @@ function OrgRegisterForm({ invite }: { invite: InviteDoc }) {
       setTimeout(() => router.replace("/org/dashboard"), 2000)
     } catch (e: any) {
       const msg: Record<string, string> = {
-        "auth/email-already-in-use": "An account with this email already exists.",
-        "auth/weak-password": "Password is too weak.",
+        "auth/email-already-in-use": "An account with this email already exists. Try logging in instead.",
+        "auth/weak-password": "Password is too weak. Use at least 6 characters.",
+        "auth/invalid-api-key": "Firebase configuration error. Please contact the admin.",
+        "auth/configuration-not-found": "Email/Password sign-in is not enabled. Please contact the admin.",
+        "auth/operation-not-allowed": "Email/Password sign-in is not enabled. Please contact the admin.",
+        "auth/network-request-failed": "Network error. Check your internet connection and try again.",
       }
-      setError(msg[e?.code] ?? (e instanceof Error ? e.message : "Registration failed."))
+      setError(msg[e?.code] ?? (e instanceof Error ? e.message : "Registration failed. Please try again."))
     } finally {
       setLoading(false)
     }
@@ -196,7 +200,7 @@ function OrgRegisterForm({ invite }: { invite: InviteDoc }) {
       <div className="flex flex-col items-center gap-4 py-8 text-center">
         <CheckCircle2 className="h-12 w-12 text-green-600" />
         <p className="text-lg font-bold text-gray-900">Registration successful!</p>
-        <p className="text-sm text-gray-500">Redirecting to your dashboard</p>
+        <p className="text-sm text-gray-500">Redirecting to your dashboard…</p>
       </div>
     )
   }
@@ -205,8 +209,11 @@ function OrgRegisterForm({ invite }: { invite: InviteDoc }) {
     <div className="space-y-4">
       <div>
         <label className="mb-1 block text-sm font-medium text-gray-700">Email</label>
-        <input value={invite.email} disabled
-          className={inputClass + " bg-gray-50 text-gray-500 cursor-not-allowed"} />
+        <input
+          value={invite.email}
+          disabled
+          className={inputClass + " bg-gray-50 text-gray-500 cursor-not-allowed"}
+        />
         <p className="mt-1 text-xs text-gray-400">This email was set by the admin.</p>
       </div>
       <div>
@@ -248,7 +255,7 @@ function OrgRegisterForm({ invite }: { invite: InviteDoc }) {
         className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 py-2.5 font-medium text-white transition-colors hover:bg-blue-800 disabled:opacity-60"
       >
         {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-        {loading ? "Creating account..." : "Create Organization Account"}
+        {loading ? "Creating account…" : "Create Organization Account"}
       </button>
     </div>
   )
@@ -259,12 +266,13 @@ function OrgRegisterInner() {
   const searchParams = useSearchParams()
   const token = searchParams.get("invite") ?? ""
 
-  const [validating, setValidating] = useState(true)
-  const [invite, setInvite]         = useState<InviteDoc | null>(null)
-  const [invalid, setInvalid]       = useState(false)
-  const [contact, setContact]       = useState({ email: "", phone: "" })
-  const [orgCount, setOrgCount]     = useState(0)
-  const [showContactPopup, setShowContactPopup] = useState(true)
+  const [validating, setValidating]           = useState(true)
+  const [invite, setInvite]                   = useState<InviteDoc | null>(null)
+  const [invalid, setInvalid]                 = useState(false)
+  const [contact, setContact]                 = useState({ email: "", phone: "" })
+  const [orgCount, setOrgCount]               = useState(0)
+  // ✅ FIX: popup is hidden by default; only shown when user clicks "Need help?"
+  const [showContactPopup, setShowContactPopup] = useState(false)
 
   useEffect(() => {
     fetchContactInfo().then(setContact)
@@ -292,11 +300,25 @@ function OrgRegisterInner() {
       <>
         <AuthShell
           heading="Organization Registration"
-          subheading={"You've been invited to register your organization. Your email (" + invite.email + ") has been pre-verified by the admin."}
+          subheading={
+            "You've been invited to register your organization. Your email (" +
+            invite.email +
+            ") has been pre-verified by the admin."
+          }
           orgCount={orgCount}
           hideSidebar={true}
         >
           <OrgRegisterForm invite={invite} />
+
+          {/* ✅ "Need help?" link — only this triggers the popup */}
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => setShowContactPopup(true)}
+              className="text-sm text-blue-600 hover:underline"
+            >
+              Need help? Contact admin
+            </button>
+          </div>
         </AuthShell>
 
         {showContactPopup && (
@@ -319,11 +341,13 @@ function OrgRegisterInner() {
 
 export default function OrgRegisterPage() {
   return (
-    <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-700" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-700" />
+        </div>
+      }
+    >
       <OrgRegisterInner />
     </Suspense>
   )

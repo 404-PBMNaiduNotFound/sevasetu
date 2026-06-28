@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { Camera, Loader2, X, AlertCircle, ImagePlus } from "lucide-react"
+import { Camera, ImagePlus, FolderOpen, Loader2, X, AlertCircle } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -15,25 +15,12 @@ import { Button } from "@/components/ui/button"
 interface ProofPhotoModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Shown as the dialog title, e.g. "Confirm Donation", "Mark Ready for Pickup" */
   title: string
-  /** Short explanation of what the photo is proof of */
   description: string
-  /** Label for the confirm button, e.g. "Confirm & Donate" */
   confirmLabel: string
-  /** Called with the selected File once the user confirms. Throw to surface
-   *  an error in the modal (it stays open and shows the error). */
   onConfirm: (file: File) => Promise<void>
 }
 
-/**
- * Shared "attach a proof photo, then confirm" modal used by every action
- * across donor/org/vendor that now requires a photo: donor "Donate", vendor
- * "Mark Ready for Pickup", org "Mark Picked Up" and "Complete". A photo is
- * mandatory — the confirm button is enabled either way (so the click always
- * registers), but submitting without a photo shows an inline error instead
- * of silently failing or proceeding without proof.
- */
 export function ProofPhotoModal({
   open,
   onOpenChange,
@@ -42,18 +29,18 @@ export function ProofPhotoModal({
   confirmLabel,
   onConfirm,
 }: ProofPhotoModalProps) {
-  const [file, setFile] = useState<File | null>(null)
+  const [file, setFile]           = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError]         = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Two separate hidden inputs — one forces camera, one opens gallery
+  const cameraInputRef  = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
 
   const reset = () => {
     setFile(null)
-    setPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev)
-      return null
-    })
+    setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null })
     setError(null)
     setSubmitting(false)
   }
@@ -63,9 +50,7 @@ export function ProofPhotoModal({
     onOpenChange(next)
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = e.target.files?.[0]
-    if (!selected) return
+  const applyFile = (selected: File) => {
     if (!selected.type.startsWith("image/")) {
       setError("Please select an image file.")
       return
@@ -76,6 +61,18 @@ export function ProofPhotoModal({
       if (prev) URL.revokeObjectURL(prev)
       return URL.createObjectURL(selected)
     })
+  }
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0]
+    if (selected) applyFile(selected)
+    // Reset input so same file can be re-selected
+    e.target.value = ""
+  }
+
+  const clearPhoto = () => {
+    setFile(null)
+    setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null })
   }
 
   const handleConfirm = async () => {
@@ -95,6 +92,29 @@ export function ProofPhotoModal({
     }
   }
 
+  // Styles as CSSProperties to avoid TS errors
+  const uploadRowStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 10,
+  }
+
+  const uploadBtnStyle: React.CSSProperties = {
+    display:        "flex",
+    flexDirection:  "column",
+    alignItems:     "center",
+    justifyContent: "center",
+    gap:            8,
+    padding:        "20px 12px",
+    borderRadius:   14,
+    border:         "2px dashed #e2e8f0",
+    background:     "#f8fafc",
+    cursor:         "pointer",
+    width:          "100%",
+    transition:     "border-color 0.15s, background 0.15s",
+    color:          "#64748b",
+  }
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -104,17 +124,26 @@ export function ProofPhotoModal({
         </DialogHeader>
 
         <div className="space-y-3">
+          {/* Hidden inputs — camera vs gallery */}
           <input
-            ref={inputRef}
+            ref={cameraInputRef}
             type="file"
             accept="image/*"
             capture="environment"
-            className="hidden"
+            style={{ display: "none" }}
+            onChange={handleFileChange}
+          />
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
             onChange={handleFileChange}
           />
 
           {previewUrl ? (
-            <div className="relative">
+            /* ── Preview ── */
+            <div style={{ position: "relative" }}>
               <img
                 src={previewUrl}
                 alt="Proof preview"
@@ -122,43 +151,89 @@ export function ProofPhotoModal({
               />
               <button
                 type="button"
-                onClick={() => {
-                  setFile(null)
-                  setPreviewUrl((prev) => {
-                    if (prev) URL.revokeObjectURL(prev)
-                    return null
-                  })
-                  if (inputRef.current) inputRef.current.value = ""
+                onClick={clearPhoto}
+                style={{
+                  position:     "absolute",
+                  top:          8,
+                  right:        8,
+                  borderRadius: "50%",
+                  background:   "rgba(0,0,0,0.6)",
+                  padding:      6,
+                  color:        "#fff",
+                  border:       "none",
+                  cursor:       "pointer",
+                  display:      "flex",
                 }}
-                className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5 text-white hover:bg-black/80"
                 aria-label="Remove photo"
               >
-                <X className="h-3.5 w-3.5" />
+                <X style={{ width: 14, height: 14 }} />
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-muted/30 py-10 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/50"
-            >
-              <ImagePlus className="h-8 w-8" />
-              <span className="text-sm font-medium">Tap to take or upload a photo</span>
-              <span className="text-xs">Required as proof</span>
-            </button>
+            /* ── Upload options ── */
+            <div style={uploadRowStyle}>
+              {/* Camera */}
+              <button
+                type="button"
+                style={uploadBtnStyle}
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                <span style={{
+                  background:   "#eff6ff",
+                  borderRadius: "50%",
+                  padding:      10,
+                  display:      "flex",
+                }}>
+                  <Camera style={{ width: 22, height: 22, color: "#1D4ED8" }} />
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Camera</span>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>Take a photo</span>
+              </button>
+
+              {/* Gallery / Storage */}
+              <button
+                type="button"
+                style={uploadBtnStyle}
+                onClick={() => galleryInputRef.current?.click()}
+              >
+                <span style={{
+                  background:   "#f0fdf4",
+                  borderRadius: "50%",
+                  padding:      10,
+                  display:      "flex",
+                }}>
+                  <FolderOpen style={{ width: 22, height: 22, color: "#16A34A" }} />
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Gallery</span>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>Choose from files</span>
+              </button>
+            </div>
           )}
 
+          {/* Retake row shown after photo is selected */}
           {previewUrl && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full gap-2"
-              onClick={() => inputRef.current?.click()}
-            >
-              <Camera className="h-3.5 w-3.5" />
-              Retake / Choose Different Photo
-            </Button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-2"
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                <Camera className="h-3.5 w-3.5" />
+                Retake
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-2"
+                onClick={() => galleryInputRef.current?.click()}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+                Choose Different
+              </Button>
+            </div>
           )}
 
           {error && (
@@ -170,10 +245,20 @@ export function ProofPhotoModal({
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} disabled={submitting}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => handleOpenChange(false)}
+            disabled={submitting}
+          >
             Cancel
           </Button>
-          <Button type="button" onClick={handleConfirm} disabled={submitting} className="gap-2">
+          <Button
+            type="button"
+            onClick={handleConfirm}
+            disabled={submitting}
+            className="gap-2"
+          >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting ? "Uploading…" : confirmLabel}
           </Button>

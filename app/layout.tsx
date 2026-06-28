@@ -3,6 +3,7 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/lib/auth-context"
 import { Toaster } from "@/components/ui/toaster"
+import { SplashScreen } from "@/components/splash-screen"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
+        <SplashScreen />
         <AuthProvider>
           {children}
           <Toaster />

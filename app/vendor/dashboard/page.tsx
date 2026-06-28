@@ -127,7 +127,6 @@ export default function VendorDashboard() {
           label="Total Orders"
           value={totalOrders}
           icon={Package}
-          trend={{ value: 12, isPositive: true }}
         />
         <DashboardStatsCard
           label="Ready for Pickup"
@@ -247,9 +246,6 @@ export default function VendorDashboard() {
                       {order.readyForPickupProofUrl && (
                         <ProofImageBadge url={order.readyForPickupProofUrl} label="Ready Proof" />
                       )}
-                      <Button size="sm" variant="outline" className="flex-1">
-                        Print Label
-                      </Button>
                     </div>
                   </div>
                 )}

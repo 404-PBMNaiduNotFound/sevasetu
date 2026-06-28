@@ -141,7 +141,7 @@ function DonationDetailModal({
         <div className="px-6 py-5">
           <div className="flex items-start gap-4 mb-5">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700 text-sm font-semibold">
-              {initials}
+               {initials}
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-semibold text-gray-900">{donation.donorName}</p>
@@ -359,7 +359,7 @@ function RequestCard({ donation, onApprove, onReject, acting, onClick }: {
                 className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-red-200 px-4 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60 sm:flex-none"
               >
                 {isActing ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
-                Rejectwfw
+                Reject
               </button><br></br>
             </div>
           )}
@@ -601,10 +601,10 @@ export function SponsorshipRequests() {
 
   return (
     <div className="mx-auto max-w-6xl p-6 lg:p-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">Sponsorship Requests</h1>
-        <p className="mt-1 leading-relaxed text-gray-600">Review and manage donation requests from donors.</p>
-      </div>
+      <div className="overflow-hidden rounded-2xl bg-blue-700 p-6 md:p-8">
+        <h1 className="text-2xl font-bold text-gray-900 text-2xl font-bold text-white">Sponsorship Requests</h1>
+        <p className="mt-1 leading-relaxed text-gray-600 mt-2 text-sm text-white">Review and manage donation requests from donors.</p>
+      </div><br></br>
 
       <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-5">
         <button

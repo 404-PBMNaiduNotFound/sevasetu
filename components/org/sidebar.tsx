@@ -7,7 +7,7 @@ import { logoutUser } from "@/lib/auth"
 import { useAuth } from "@/lib/auth-context"
 import {
   LayoutDashboard, Building2, ClipboardList, HandHeart, Gift,
-  Users, BarChart3, Settings, LifeBuoy, LogOut, Menu, X, Heart, Receipt, Truck,
+  Users, BarChart3, Settings, LifeBuoy, LogOut, Menu, X, Heart, Receipt, Truck, Bell,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -24,6 +24,7 @@ const navItems = [
   { label: "Sponsorship Slots", icon: HandHeart, href: "/org/slots" },
   { label: "Donations", icon: Gift, href: "/org/donations" },
   { label: "Ready to Ship", icon: Truck, href: "/org/ready-to-ship" },
+  { label: "Notifications", icon: Bell, href: "/org/notifications" },
   { label: "Transactions", icon: Receipt, href: "/org/transactions" },
   { label: "Donors", icon: Users, href: "/org/donors" },
   { label: "Reports", icon: BarChart3, href: "/org/reports" },

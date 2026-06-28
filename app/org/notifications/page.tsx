@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react"
 import { useAuth } from "@/lib/auth-context"
 import {
-  getDonorDonations,
-  getDonorOrders,
-  getOrganizations,
+  getOrgDonations,
+  getOrgOrders,
+  getUser,
   type DonationDoc,
   type OrderDoc,
 } from "@/lib/firestore"
@@ -21,8 +21,8 @@ import {
 } from "@/components/ui/dialog"
 
 type NotificationItem =
-  | { kind: "donation"; donation: DonationDoc; orgName: string; ts: number }
-  | { kind: "payment"; order: OrderDoc; orgName: string; ts: number }
+  | { kind: "donation"; donation: DonationDoc; donorName: string; ts: number }
+  | { kind: "payment"; order: OrderDoc; donorName: string; ts: number }
 
 function formatTs(ts: any): string {
   if (!ts) return "—"
@@ -57,7 +57,7 @@ function getStatusLabel(status: string) {
   return status
 }
 
-export default function DonorNotificationsPage() {
+export default function OrgNotificationsPage() {
   const { user } = useAuth()
   const [items, setItems] = useState<NotificationItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -70,42 +70,59 @@ export default function DonorNotificationsPage() {
     async function load() {
       setLoading(true)
       try {
-        const [allDonations, orders, orgsList] = await Promise.all([
-          getDonorDonations(user!.uid),
-          getDonorOrders(user!.uid),
-          getOrganizations(),
+        // Load donations that have been actioned (not just Pending)
+        const [allDonations, orders] = await Promise.all([
+          getOrgDonations(user!.uid),
+          getOrgOrders(user!.uid),
         ])
 
-        // Build org name map
-        const orgMap: Record<string, string> = {}
-        orgsList.forEach((org) => {
-          const id = org.uid || org.orgId
-          if (id) orgMap[id] = org.organizationName || org.name || "Unknown Organization"
-        })
+        const actionedDonations = allDonations.filter(
+          (d) => d.status !== "Pending"
+        )
 
-        // Only show donations that have been actioned (not still Pending)
-        const actionedDonations = allDonations.filter((d) => d.status !== "Pending")
+        // Resolve donor names for donations
+        const uniqueDonorIds = [...new Set(actionedDonations.map((d) => d.donorId).filter(Boolean))]
+        const donorMap: Record<string, string> = {}
+        await Promise.all(
+          uniqueDonorIds.map(async (id) => {
+            const u = await getUser(id)
+            donorMap[id] = u?.name || "Unknown Donor"
+          })
+        )
+
+        // Resolve donor names for orders (vendor payment)
+        const orderDonorIds = [...new Set(orders.map((o) => o.donorId).filter(Boolean) as string[])]
+        await Promise.all(
+          orderDonorIds.map(async (id) => {
+            if (!donorMap[id]) {
+              const u = await getUser(id)
+              donorMap[id] = u?.name || "Unknown Donor"
+            }
+          })
+        )
 
         const donationItems: NotificationItem[] = actionedDonations.map((d) => ({
           kind: "donation",
           donation: d,
-          orgName: orgMap[d.organizationId] || d.organizationName || "Organization",
+          donorName: donorMap[d.donorId] || "Unknown Donor",
           ts: getTs(d.updatedAt || d.createdAt),
         }))
 
-        // Only include orders with a real payment status (not failed)
-        const paymentOrders = orders.filter((o) => o.status !== "failed")
+        // Only include orders that have completed payment (not pending)
+        const paymentOrders = orders.filter(
+          (o) => o.status !== "failed" && o.donorId
+        )
         const paymentItems: NotificationItem[] = paymentOrders.map((o) => ({
           kind: "payment",
           order: o,
-          orgName: orgMap[o.organizationId || ""] || o.organizationName || "Organization",
+          donorName: donorMap[o.donorId || ""] || "Unknown Donor",
           ts: getTs(o.updatedAt || o.orderDate),
         }))
 
         const all = [...donationItems, ...paymentItems].sort((a, b) => b.ts - a.ts)
         setItems(all)
       } catch (err) {
-        console.error("Failed to load donor notifications:", err)
+        console.error("Failed to load org notifications:", err)
       } finally {
         setLoading(false)
       }
@@ -114,8 +131,15 @@ export default function DonorNotificationsPage() {
     load()
   }, [user?.uid])
 
+  const handleClick = (item: NotificationItem) => {
+    setSelected(item)
+    setDialogOpen(true)
+  }
+
   const getNotifTitle = (item: NotificationItem) => {
-    if (item.kind === "payment") return "Payment Successful"
+    if (item.kind === "payment") {
+      return "Payment Received"
+    }
     const d = item.donation
     if (d.status === "Approved") return "Donation Approved"
     if (d.status === "Completed") return "Donation Completed"
@@ -127,19 +151,21 @@ export default function DonorNotificationsPage() {
   const getNotifBody = (item: NotificationItem) => {
     if (item.kind === "payment") {
       const o = item.order
-      return `Your payment of ₹${o.amount.toLocaleString("en-IN")} to ${item.orgName} via vendor was successful.`
+      const orgName = o.organizationName || "your organization"
+      return `${item.donorName} completed a vendor payment of ₹${o.amount.toLocaleString("en-IN")} for ${orgName}.`
     }
     const d = item.donation
+    const donorLabel = item.donorName
     const itemLabel = d.itemName
       ? `${d.quantity ?? ""} ${d.unit || ""} of ${d.itemName}`.trim()
       : d.meals
       ? `${d.meals} meals`
-      : "your donation"
-    if (d.status === "Approved") return `${item.orgName} approved your donation of ${itemLabel}.`
-    if (d.status === "Completed") return `Your donation of ${itemLabel} to ${item.orgName} has been completed.`
-    if (d.status === "Rejected") return `${item.orgName} could not accept your donation request.`
-    if (d.status === "ToBeConfirmed") return `Your donation of ${itemLabel} is packed and ready to ship to ${item.orgName}.`
-    return `Your donation status changed to ${d.status}.`
+      : "a donation"
+    if (d.status === "Approved") return `You approved ${donorLabel}'s donation of ${itemLabel}.`
+    if (d.status === "Completed") return `${donorLabel}'s donation of ${itemLabel} has been marked completed.`
+    if (d.status === "Rejected") return `You rejected ${donorLabel}'s donation request.`
+    if (d.status === "ToBeConfirmed") return `${donorLabel}'s donation of ${itemLabel} is packed and ready to ship.`
+    return `${donorLabel}'s donation status changed to ${d.status}.`
   }
 
   const getNotifTs = (item: NotificationItem) => {
@@ -156,12 +182,12 @@ export default function DonorNotificationsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-8 p-6">
       <div className="overflow-hidden rounded-2xl bg-blue-700 p-6 md:p-8">
         <header>
           <h1 className="text-2xl font-bold text-white md:text-3xl">Notifications</h1>
           <p className="mt-2 text-sm text-white/80">
-            {items.length > 0 ? `${items.length} recent update${items.length > 1 ? "s" : ""}` : "All caught up!"}
+            {items.length > 0 ? `${items.length} recent update${items.length > 1 ? "s" : ""}` : "No updates yet"}
           </p>
         </header>
       </div>
@@ -181,7 +207,7 @@ export default function DonorNotificationsPage() {
             return (
               <div
                 key={i}
-                onClick={() => { setSelected(item); setDialogOpen(true) }}
+                onClick={() => handleClick(item)}
                 className="rounded-2xl border border-border bg-card p-5 transition-colors cursor-pointer hover:bg-secondary/30"
               >
                 <div className="flex items-start gap-3">
@@ -225,8 +251,8 @@ export default function DonorNotificationsPage() {
                 <div className="rounded-xl border border-gray-100 bg-gray-50 divide-y divide-gray-100">
                   <div className="flex items-center gap-3 px-4 py-3">
                     <Building2 className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-500 w-24 shrink-0">Organization</span>
-                    <span className="text-sm font-semibold text-gray-900">{selected.orgName}</span>
+                    <span className="text-sm text-gray-500 w-24 shrink-0">Donor</span>
+                    <span className="text-sm font-semibold text-gray-900">{selected.donorName}</span>
                   </div>
                   <div className="flex items-center gap-3 px-4 py-3">
                     <Tag className="h-4 w-4 text-gray-400" />
@@ -252,20 +278,6 @@ export default function DonorNotificationsPage() {
                       <span className="text-sm font-medium text-gray-900">{d.occasion}</span>
                     </div>
                   )}
-                  {d.message && (
-                    <div className="flex items-center gap-3 px-4 py-3">
-                      <Clipboard className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm text-gray-500 w-24 shrink-0">Message</span>
-                      <span className="text-sm font-medium text-gray-900">{d.message}</span>
-                    </div>
-                  )}
-                  {d.notes && (
-                    <div className="flex items-center gap-3 px-4 py-3">
-                      <Clipboard className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm text-gray-500 w-24 shrink-0">Org Notes</span>
-                      <span className="text-sm font-medium text-gray-900">{d.notes}</span>
-                    </div>
-                  )}
                   {d.updatedAt && (
                     <div className="flex items-center gap-3 px-4 py-3">
                       <Calendar className="h-4 w-4 text-gray-400" />
@@ -274,6 +286,12 @@ export default function DonorNotificationsPage() {
                     </div>
                   )}
                 </div>
+                {d.notes && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs font-semibold text-gray-500">Notes</span>
+                    <p className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-2 text-sm text-gray-700">{d.notes}</p>
+                  </div>
+                )}
                 {proofImage && (
                   <div className="flex flex-col gap-1">
                     <span className="text-xs font-semibold text-gray-500 flex items-center gap-1">
@@ -306,18 +324,18 @@ export default function DonorNotificationsPage() {
                 <div className="rounded-xl border border-gray-100 bg-gray-50 divide-y divide-gray-100">
                   <div className="flex items-center gap-3 px-4 py-3">
                     <Building2 className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-500 w-28 shrink-0">From (You)</span>
-                    <span className="text-sm font-semibold text-gray-900">{o.donorName || "You"}</span>
+                    <span className="text-sm text-gray-500 w-28 shrink-0">From (Donor)</span>
+                    <span className="text-sm font-semibold text-gray-900">{selected.donorName}</span>
                   </div>
                   <div className="flex items-center gap-3 px-4 py-3">
                     <ArrowRight className="h-4 w-4 text-gray-400" />
                     <span className="text-sm text-gray-500 w-28 shrink-0">To (Org)</span>
-                    <span className="text-sm font-semibold text-gray-900">{selected.orgName}</span>
+                    <span className="text-sm font-semibold text-gray-900">{o.organizationName || "Your Organization"}</span>
                   </div>
                   <div className="flex items-center gap-3 px-4 py-3">
                     <CreditCard className="h-4 w-4 text-gray-400" />
                     <span className="text-sm text-gray-500 w-28 shrink-0">Amount</span>
-                    <span className="text-sm font-bold text-emerald-700">₹{o.amount.toLocaleString("en-IN")}</span>
+                    <span className="text-sm font-semibold text-emerald-700">₹{o.amount.toLocaleString("en-IN")}</span>
                   </div>
                   {o.vendorName && (
                     <div className="flex items-center gap-3 px-4 py-3">

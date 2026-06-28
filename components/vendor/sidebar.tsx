@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { logoutUser } from "@/lib/auth"
 import { useAuth } from "@/lib/auth-context"
 import {
-  LayoutDashboard, Package, Receipt, Settings, LifeBuoy, LogOut, Menu, X, Heart,
+  LayoutDashboard, Package, Receipt, Settings, LifeBuoy, LogOut, Menu, X, Heart, Bell,
 } from "lucide-react"
 import {
   DropdownMenu,
@@ -21,6 +21,7 @@ import {
 // live in app/vendor/layout.tsx's top nav.
 const approvedNavItems = [
   { label: "My Items", icon: Package, href: "/vendor/items" },
+  { label: "Notifications", icon: Bell, href: "/vendor/notifications" },
   { label: "Transactions", icon: Receipt, href: "/vendor/transactions" },
   { label: "Profile", icon: Settings, href: "/vendor/profile" },
 ]

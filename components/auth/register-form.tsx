@@ -4,12 +4,20 @@ import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { User, Mail, Lock, Eye, EyeOff } from "lucide-react"
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth"
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Spinner } from "@/components/ui/spinner"
-import { registerUser } from "@/lib/auth"
+import { registerUser, getUserRole, getRedirectPath } from "@/lib/auth"
+import { auth, db } from "@/lib/firebase"
+import { sanitizeData } from "@/lib/sanitize"
+
+function setRoleCookie(role: string) {
+  document.cookie = `user_role=${role};path=/;max-age=${60 * 60 * 24 * 7};SameSite=Strict`
+}
 
 function GoogleIcon() {
   return (
@@ -32,8 +40,56 @@ export function RegisterForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState("")
   const [showPassword, setShowPassword] = useState(false)
+
+  const isBusy = loading || googleLoading
+
+  async function handleGoogleSignUp() {
+    setError("")
+    setGoogleLoading(true)
+    try {
+      const provider = new GoogleAuthProvider()
+      const cred = await signInWithPopup(auth, provider)
+      const { uid, email: userEmail, displayName } = cred.user
+
+      // Create user doc if first time (idempotent — safe to call on re-login too)
+      const userRef = doc(db, "users", uid)
+      const snap = await getDoc(userRef)
+      if (!snap.exists()) {
+        await setDoc(
+          userRef,
+          sanitizeData({
+            uid,
+            email: userEmail ?? "",
+            name: displayName ?? "",
+            role: "donor",
+            createdAt: serverTimestamp(),
+          })
+        )
+      }
+
+      const role = await getUserRole(uid)
+      if (!role) {
+        setError("User profile not found. Please try again.")
+        return
+      }
+
+      setRoleCookie(role)
+      router.push(getRedirectPath(role))
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code
+      if (code === "auth/popup-closed-by-user") return   // user dismissed — no error
+      if (code === "auth/popup-blocked-by-browser") {
+        setError("Popup was blocked by your browser. Please allow popups for this site and try again.")
+        return
+      }
+      setError(err instanceof Error ? err.message : "Failed to sign up with Google. Please try again.")
+    } finally {
+      setGoogleLoading(false)
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -54,10 +110,16 @@ export function RegisterForm() {
       <Button
         type="button"
         variant="outline"
+        disabled={isBusy}
+        onClick={handleGoogleSignUp}
         className="h-11 w-full gap-2.5 rounded-xl border-2 text-sm font-semibold text-foreground hover:bg-accent"
       >
-        <GoogleIcon />
-        Sign up with Google
+        {googleLoading ? (
+          <Spinner className="size-4" />
+        ) : (
+          <GoogleIcon />
+        )}
+        {googleLoading ? "Signing up…" : "Sign up with Google"}
       </Button>
 
       <div className="flex items-center gap-3">
@@ -80,7 +142,7 @@ export function RegisterForm() {
             onChange={(e) => setName(e.target.value)}
             className="h-11 rounded-xl pl-10"
             required
-            disabled={loading}
+            disabled={isBusy}
           />
         </div>
       </div>
@@ -100,7 +162,7 @@ export function RegisterForm() {
             onChange={(e) => setEmail(e.target.value)}
             className="h-11 rounded-xl pl-10"
             required
-            disabled={loading}
+            disabled={isBusy}
           />
         </div>
       </div>
@@ -120,7 +182,7 @@ export function RegisterForm() {
             onChange={(e) => setPassword(e.target.value)}
             className="h-11 rounded-xl px-10"
             required
-            disabled={loading}
+            disabled={isBusy}
           />
           <button
             type="button"
@@ -148,7 +210,7 @@ export function RegisterForm() {
 
       <Button
         type="submit"
-        disabled={loading}
+        disabled={isBusy}
         className="h-11 w-full rounded-xl bg-primary text-base font-semibold text-primary-foreground hover:bg-primary/90"
       >
         {loading ? <Spinner className="size-5 text-primary-foreground" /> : "Create account"}
