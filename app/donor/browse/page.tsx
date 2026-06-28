@@ -1,19 +1,14 @@
 "use client"
 
-/**
- * app/donor/browse/page.tsx  (UPDATED)
- *
- * Adds a "Nearby Organisations" tab alongside the existing list view.
- * Paste this file over app/donor/browse/page.tsx.
- */export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic';
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
+import nextDynamic from "next/dynamic"
 import { Search, List, MapPin } from "lucide-react"
 import { OrgCard } from "@/components/donor/org-card"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { NearbyMap } from "@/components/map/NearbyMap"
 import {
   Select,
   SelectContent,
@@ -24,9 +19,15 @@ import {
 import { getOrganizations, type OrganizationDoc } from "@/lib/firestore"
 import { useRouter } from "next/navigation"
 
+// ✅ Lazy-load Leaflet map — it uses browser-only APIs, never run on server
+const NearbyMap = nextDynamic(  () => import("@/components/map/NearbyMap").then((m) => ({ default: m.NearbyMap })),
+  { ssr: false, loading: () => <div className="h-[420px] flex items-center justify-center"><Spinner className="size-8" /></div> }
+)
+
 type ViewMode = "list" | "map"
 
-export default function BrowsePage() {
+// ✅ Inner component holds all the useSearchParams logic
+function BrowseContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const initialQuery = searchParams.get("q") ?? ""
@@ -92,7 +93,6 @@ export default function BrowsePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Header */}
       <div className="overflow-hidden rounded-2xl bg-blue-700 p-6 md:p-8">
         <header>
           <h1 className="text-2xl font-bold text-white md:text-3xl">Browse Organizations</h1>
@@ -102,14 +102,11 @@ export default function BrowsePage() {
         </header>
       </div>
 
-      {/* View toggle */}
       <div className="flex items-center gap-2">
         <button
           onClick={() => setViewMode("list")}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-            viewMode === "list"
-              ? "bg-blue-700 text-white"
-              : "bg-muted text-muted-foreground hover:bg-muted/70"
+            viewMode === "list" ? "bg-blue-700 text-white" : "bg-muted text-muted-foreground hover:bg-muted/70"
           }`}
         >
           <List className="w-4 h-4" />
@@ -118,9 +115,7 @@ export default function BrowsePage() {
         <button
           onClick={() => setViewMode("map")}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-            viewMode === "map"
-              ? "bg-blue-700 text-white"
-              : "bg-muted text-muted-foreground hover:bg-muted/70"
+            viewMode === "map" ? "bg-blue-700 text-white" : "bg-muted text-muted-foreground hover:bg-muted/70"
           }`}
         >
           <MapPin className="w-4 h-4" />
@@ -128,10 +123,8 @@ export default function BrowsePage() {
         </button>
       </div>
 
-      {/* LIST VIEW */}
       {viewMode === "list" && (
         <>
-          {/* Filters */}
           <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm md:flex-row md:items-center">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -181,15 +174,12 @@ export default function BrowsePage() {
 
           {filtered.length > 0 && (
             <div className="flex justify-center">
-              <Button variant="outline" className="rounded-xl px-8">
-                View More Organizations
-              </Button>
+              <Button variant="outline" className="rounded-xl px-8">View More Organizations</Button>
             </div>
           )}
         </>
       )}
 
-      {/* MAP VIEW */}
       {viewMode === "map" && (
         <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
           <NearbyMap
@@ -201,5 +191,18 @@ export default function BrowsePage() {
         </div>
       )}
     </div>
+  )
+}
+
+// ✅ Default export wraps BrowseContent in Suspense — required by Next.js for useSearchParams
+export default function BrowsePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Spinner className="size-8" />
+      </div>
+    }>
+      <BrowseContent />
+    </Suspense>
   )
 }
