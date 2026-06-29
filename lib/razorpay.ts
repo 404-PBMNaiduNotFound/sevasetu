@@ -41,3 +41,17 @@ export const verifyPaymentSignature = (
 
   return generated_signature === signature
 }
+
+/**
+ * Issues a full refund for a captured payment, returning the donor's money
+ * to their original payment method. Used when a donor cancels an order
+ * after payment has already succeeded (see app/api/orders/cancel) — a
+ * different case from a payment that simply failed, which never reaches
+ * this function.
+ */
+export async function refundPayment(razorpayPaymentId: string, amountInRupees: number) {
+  return getRazorpayInstance().payments.refund(razorpayPaymentId, {
+    amount: Math.round(amountInRupees * 100),
+    speed: 'normal',
+  })
+}

@@ -9,6 +9,7 @@ type StatusType =
   | 'ready_for_pickup'
   | 'picked_up'
   | 'failed'
+  | 'cancelled_by_donor'
 
 const statusConfig: Record<StatusType, { label: string; className: string }> = {
   pending: {
@@ -42,6 +43,10 @@ const statusConfig: Record<StatusType, { label: string; className: string }> = {
   failed: {
     label: 'Failed / Cancelled',
     className: 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700',
+  },
+  cancelled_by_donor: {
+    label: 'Cancelled by Donor',
+    className: 'bg-gray-100 text-gray-800 border-gray-300 dark:bg-gray-800/40 dark:text-gray-300 dark:border-gray-600',
   },
 }
 

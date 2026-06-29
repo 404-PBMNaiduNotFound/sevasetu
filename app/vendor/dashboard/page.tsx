@@ -83,7 +83,10 @@ export default function VendorDashboard() {
 
   const totalOrders = orders.length
   const readyForPickup = orders.filter((o) => o.status === 'ready_for_pickup').length
-  const totalAmount = orders.reduce((sum, o) => sum + o.amount, 0)
+  // Cancelled-by-donor orders are excluded from revenue since that money was refunded.
+  const totalAmount = orders
+    .filter((o) => o.status !== 'cancelled_by_donor')
+    .reduce((sum, o) => sum + o.amount, 0)
 
   const handleMarkReadyConfirm = async (orderId: string, file: File) => {
     const proofUrl = await uploadProofImage(orderId, "ready_for_pickup", file)
@@ -140,7 +143,7 @@ export default function VendorDashboard() {
         />
         <DashboardStatsCard
           label="Pending Actions"
-          value={orders.filter((o) => o.status !== 'picked_up').length}
+          value={orders.filter((o) => o.status !== 'picked_up' && o.status !== 'cancelled_by_donor').length}
           icon={Clock}
         />
       </div>

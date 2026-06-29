@@ -165,7 +165,7 @@ export interface OrderDoc {
   orderDate?: Timestamp
   amount: number
   items: OrderItem[]
-  status: "payment_confirmed" | "preparing" | "ready_for_pickup" | "picked_up" | "failed"
+  status: "payment_confirmed" | "preparing" | "ready_for_pickup" | "picked_up" | "failed" | "cancelled_by_donor"
   receiverName: string
   receiverPhone: string
   receiverAddress: string
@@ -177,6 +177,12 @@ export interface OrderDoc {
   /** Proof photo the org attached when marking this order "picked up" —
    *  required before the action is allowed to go through. */
   pickedUpProofUrl?: string
+  /** Set when the donor cancels a paid order (see app/api/orders/cancel).
+   *  Distinct from "failed" — this means payment succeeded and was then
+   *  refunded, not that payment never went through. */
+  cancelledAt?: Timestamp
+  /** Razorpay refund id (e.g. "rfnd_...") issued when this order was cancelled. */
+  refundId?: string
 }
 
 export interface PaymentDoc {
@@ -191,7 +197,7 @@ export interface PaymentDoc {
   requirementId?: string
   organizationId?: string
   amount: number
-  status: "pending" | "success" | "failed"
+  status: "pending" | "success" | "failed" | "refunded"
   createdAt?: Timestamp
   updatedAt?: Timestamp
 }
@@ -258,7 +264,7 @@ export interface DonationDoc {
   submissionDate?: string
   occasion?: string
   message?: string
-  status: "Pending" | "Approved" | "ToBeConfirmed" | "Completed" | "Rejected"
+  status: "Pending" | "Approved" | "ToBeConfirmed" | "Completed" | "Rejected" | "CancelledByDonor"
   createdAt?: Timestamp
   updatedAt?: Timestamp
   completedAt?: Timestamp
@@ -1577,6 +1583,30 @@ export async function markOrderFailed(orderId: string) {
     status: "failed",
     updatedAt: serverTimestamp(),
   })
+}
+
+/**
+ * Donor-initiated cancellation of an already-paid order. Unlike
+ * markOrderFailed (payment never went through), this is for orders where
+ * payment succeeded and the donor now wants to back out — so it must
+ * trigger a real Razorpay refund and update donor/org/vendor-visible
+ * records consistently. Firestore rules don't let a donor write to
+ * `orders` directly (only vendor/org/admin can), and the refund call
+ * needs the server-side Razorpay secret anyway, so this goes through
+ * the API route (app/api/orders/cancel) which uses firebase-admin —
+ * same pattern as app/api/payments/verify.
+ */
+export async function cancelOrderByDonor(orderId: string, donorId: string): Promise<{ refundId: string }> {
+  const res = await fetch("/api/orders/cancel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderId, donorId }),
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    throw new Error(data?.error || "Failed to cancel order")
+  }
+  return data
 }
 
 export async function markOrderReadyForPickup(orderId: string, proofUrl: string) {

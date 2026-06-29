@@ -6,6 +6,7 @@ const styles: Record<DonationDoc["status"], string> = {
   ToBeConfirmed: "bg-purple-100 text-purple-700",
   Completed: "bg-blue-100 text-blue-700",
   Rejected: "bg-red-100 text-red-700",
+  CancelledByDonor: "bg-gray-100 text-gray-700",
 }
 
 const labels: Record<DonationDoc["status"], string> = {
@@ -14,6 +15,7 @@ const labels: Record<DonationDoc["status"], string> = {
   ToBeConfirmed: "Awaiting Pickup",
   Completed: "Completed",
   Rejected: "Rejected",
+  CancelledByDonor: "Cancelled by Donor",
 }
 
 export function StatusBadge({ status }: { status: DonationDoc["status"] }) {

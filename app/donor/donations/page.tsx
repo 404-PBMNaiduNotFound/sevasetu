@@ -288,14 +288,15 @@ export default function DonationsPage() {
   }, [user?.uid])
 
   // Map donationId -> order, for quick lookup when opening the detail modal,
-  // and to gate the "Donate" button (see action buttons below). Failed/cancelled
-  // orders are excluded so a donor whose vendor payment didn't go through can
-  // still retry "Find a Vendor & Pay" or fall back to "Donate" instead of being
+  // and to gate the "Donate" button (see action buttons below). Failed and
+  // donor-cancelled orders are excluded so a donor whose vendor payment
+  // didn't go through (or who backed out and got refunded) can still retry
+  // "Find a Vendor & Pay" or fall back to "Donate" instead of being
   // permanently stuck.
   const orderByDonationId = useMemo(() => {
     const map: Record<string, OrderDoc> = {}
     orders.forEach((o) => {
-      if (o.donationId && o.status !== "failed") map[o.donationId] = o
+      if (o.donationId && o.status !== "failed" && o.status !== "cancelled_by_donor") map[o.donationId] = o
     })
     return map
   }, [orders])
@@ -324,7 +325,7 @@ export default function DonationsPage() {
     const toBeConfirmed = donations.filter((d) => d.status === "ToBeConfirmed").length
     const toBeCompleted = toBeConfirmed
     return {
-      all: donations.filter((d) => d.status !== "Pending" && d.status !== "Rejected").length,
+      all: donations.filter((d) => d.status !== "Pending" && d.status !== "Rejected" && d.status !== "CancelledByDonor").length,
       completed,
       toBeConfirmed,
       approvedOnly,
@@ -349,8 +350,9 @@ export default function DonationsPage() {
   const filtered = useMemo(() => {
     let result =
       statusFilter === "All"
-        // "All" shows only org-actioned donations — excludes Pending and Rejected
-        ? donations.filter((d) => d.status !== "Pending" && d.status !== "Rejected")
+        // "All" shows only org-actioned donations — excludes Pending, Rejected,
+        // and donor-cancelled donations (refunded, no longer active)
+        ? donations.filter((d) => d.status !== "Pending" && d.status !== "Rejected" && d.status !== "CancelledByDonor")
         : statusFilter === "Approved"
         ? donations.filter((d) => d.status === "Approved")
         : statusFilter === "ToBeConfirmed"
